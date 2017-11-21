@@ -1,6 +1,6 @@
-= F3-JsonAPI
+# F3-JsonAPI
 
-== Introduction
+## Introduction
 I've had to write a few JsonAPI servers and, at some point, I've started to distil all the common code into a separate class. This is still a work in progress and will be for a while, since it is both my first library and a rewrite of those common classes I was talking about; but it should quickly be operative.
 
 The objective is that you install this with 
@@ -16,7 +16,7 @@ Define each model in the namespace `Model`, using F3-Cortex for this, and finall
 
     JsonApi::setup();
 
-== Current status
+## Current status
 
   * The base controller is mostly written, only lacking query parameters (filters, pagination and so)
   * A restricted controller, for those objects that can only be accessed by their creators, is written but untested
