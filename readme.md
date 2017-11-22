@@ -20,5 +20,4 @@ Define each model in the namespace `Model`, using F3-Cortex for this, and finall
 
   * The base controller is mostly written, only lacking query parameters (filters, pagination and so)
   * A restricted controller, for those objects that can only be accessed by their creators, is written but untested
-  * Setup is still to be written
-  * For now, Controllers must be extended to be used. The objective is for this not to be needed for trivial cases.
+  * Setup is written but yet untested
