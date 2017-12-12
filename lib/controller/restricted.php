@@ -27,7 +27,7 @@ class Restricted extends JsonApi {
                 $query[] = $user->id;
             }
             return $query;
-        } else throw new Exception("No user loaded."); 
+        } else $f3->error(403, "You are not authenticated"); 
     }
     
     protected function processListQuery($query)
@@ -41,7 +41,7 @@ class Restricted extends JsonApi {
                 $query[] = $user->id;
             }
             return $query;
-        } else throw new Exception("No user loaded."); 
+        } else $f3->error(403, "You are not authenticated"); 
     }
 
     protected function processInput($vars, $obj) {
@@ -51,9 +51,9 @@ class Restricted extends JsonApi {
             if($obj->dry()) //New object 
                 $obj->set("owner_field", $user);
             else if($obj->get("owner_field") !== $user && !in_array($user->get("role_var"), $this->accepted_roles))
-                throw new Exception("User has no permissions to edit this"); //Replace with an actual HTTP error 
+                $f3->error(403, "You have not the permissions required to see this.");
 
             return $vars;
-        } else throw new Exception("No user loaded."); 
+        } else $f3->error(403, "You are not authenticated"); 
     }
 }

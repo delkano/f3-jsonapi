@@ -11,7 +11,7 @@ class JsonAPI {
         foreach($cruds as $crud => $obj) {
             // For each one, see if a Controller exists. If not, it will be handled by the fallback
             $obj = "\Controller\\$obj";
-            if(!class_exists($obj)) {
+            if(class_exists($obj)) {
                 // Create the routes for it.
                 $f3->route("GET @${crud}: /api/${crud}/@id", "${obj}->getOne");
                 $f3->route("GET @${crud}: /api/${crud}", "${obj}->getList");

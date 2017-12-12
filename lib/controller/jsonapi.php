@@ -15,7 +15,6 @@ class JsonApi {
      */
     public function __construct($model="", $blacklist = []) {
         $this->model = $model;
-        $this->plural = $this->findPlural($this->model);
         $this->blacklist = $blacklist;
     }
 
@@ -60,20 +59,20 @@ class JsonApi {
                         $query[0].= " AND ";
                     $query[0].= "($filter_query)";
                     $query = array_merge($query, $vals);
-                } else if(substr($filter, -4) == "_not" && in_array(substr($filter, 0, -4), $fields) { // not equals
+                } else if(substr($filter, -4) == "_not" && in_array(substr($filter, 0, -4), $fields)) { // not equals
                     $vals = explode(',', $value);
                     $filter_query = implode(" OR ", array_fill(0, count($vals), "`$filter` <> ?"));
                     if(count($query) > 1)
                         $query[0].= " AND ";
                     $query[0].= "($filter_query)";
                     $query = array_merge($query, $vals);
-                } else if(substr($filter, -5) == "_from" && in_array(substr($filter, 0, -5), $fields) { // larger than
+                } else if(substr($filter, -5) == "_from" && in_array(substr($filter, 0, -5), $fields)) { // larger than
                     // There should only be one value in this case, so no explodes and fills and so
                     if(count($query) > 1)
                         $query[0].= " AND ";
                     $query[0].= "(`$filter` >= ?)";
                     $query[] = $value;
-                } else if(substr($filter, -3) == "_to" && in_array(substr($filter, 0, -3), $fields) { // smaller than
+                } else if(substr($filter, -3) == "_to" && in_array(substr($filter, 0, -3), $fields)) { // smaller than
                     // There should only be one value in this case, so no explodes and fills and so
                     if(count($query) > 1)
                         $query[0].= " AND ";
@@ -186,6 +185,7 @@ class JsonApi {
     }
 
     protected function oneToJson($object) {
+        $this->plural = $this->findPlural($this->model);
         $arr = [
             "links" => [
                 "self" => "/api/".$this->plural."/".$object->id
@@ -196,6 +196,7 @@ class JsonApi {
     }
 
     protected function manyToJson($list) {
+        $this->plural = $this->findPlural($this->model);
         $arr = [
             "links" => [
                 "self" => "/api/".$this->plural
@@ -267,8 +268,10 @@ class JsonApi {
 
     protected function findPlural($name) {
         $f3 = \Base::instance();
-        if($f3->models) {
+        if(!empty($name) && $f3->models) {
+            echo $name;
             $keys = array_flip($f3->models);
+            print_r($keys);
             if(isset($keys[$name])) return $keys[$name];
         }
         return $name."s";
