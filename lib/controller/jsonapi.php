@@ -54,14 +54,14 @@ class JsonApi {
             // We want: field equals, field from, field to, field not equals.
             foreach($filters as $filter=>$value) {
                 if(in_array($filter, $fields)) { // equals
-                    $vals = explode(',' $value);
+                    $vals = explode(',', $value);
                     $filter_query = implode(" OR ", array_fill(0, count($vals), "`$filter` = ?"));
                     if(count($query) > 1)
                         $query[0].= " AND ";
                     $query[0].= "($filter_query)";
                     $query = array_merge($query, $vals);
                 } else if(substr($filter, -4) == "_not" && in_array(substr($filter, 0, -4), $fields) { // not equals
-                    $vals = explode(',' $value);
+                    $vals = explode(',', $value);
                     $filter_query = implode(" OR ", array_fill(0, count($vals), "`$filter` <> ?"));
                     if(count($query) > 1)
                         $query[0].= " AND ";
