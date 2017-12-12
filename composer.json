@@ -1,0 +1,14 @@
+{
+    "name": "delkano/f3-jsonapi",
+    "description": "A few helpful classes for quick implementation of a JsonAPI server with the FatFreeFramework",
+    "keywords": ["F3","fatfree","jsonapi"],
+    "homepage": "https://github.com/delkano/f3-jsonapi",
+    "license": "GPL-2.0",
+    "autoload": {
+		"classmap": ["lib/"]
+    },
+    "require": {
+        "ikkez/f3-cortex": "1.*",
+        "bcosca/fatfree": "^3.6"
+    }
+}

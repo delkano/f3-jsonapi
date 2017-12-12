@@ -13,7 +13,7 @@ class JsonApi {
      * @model String with the related model for this controller
      * @blacklist Array of fields that must not be shown/returned (ie, 'password')
      */
-    public function __construct($model, $blacklist = []) {
+    public function __construct($model="", $blacklist = []) {
         $this->model = $model;
         $this->plural = $this->findPlural($this->model);
         $this->blacklist = $blacklist;
@@ -22,6 +22,11 @@ class JsonApi {
     /* RESTful API methods */
     public function getOne($f3, $params) {
         $id = intval($params['id']);
+
+        // We don't support includes, for the time being
+        if(isset($f3["GET.include"]))
+            $f3->error(400, "Include is not yet implemented");
+
         $model = $this->getModel();
         $query = ["id=?", $id];
         $query = $this->processSingleQuery($query); // Allows customization in children
@@ -39,7 +44,50 @@ class JsonApi {
         // Query creation
         $query = [""];
         $query = $this->processListQuery($query); // Allows customization in children
-        // Here we should evaluate filters, if any exist.
+        // We don't support includes, for the time being
+        if(isset($f3["GET.include"]))
+            $f3->error(400, "Include is not yet implemented");
+        // Here we evaluate a few common filters, if any exist.
+        if(isset($f3["GET.filter"])) {
+            $filters = $f3["GET.filter"];
+            $fields = array_keys($object->getFieldConfiguration());
+            // We want: field equals, field from, field to, field not equals.
+            foreach($filters as $filter=>$value) {
+                if(in_array($filter, $fields)) { // equals
+                    $vals = explode(',' $value);
+                    $filter_query = implode(" OR ", array_fill(0, count($vals), "`$filter` = ?"));
+                    if(count($query) > 1)
+                        $query[0].= " AND ";
+                    $query[0].= "($filter_query)";
+                    $query = array_merge($query, $vals);
+                } else if(substr($filter, -4) == "_not" && in_array(substr($filter, 0, -4), $fields) { // not equals
+                    $vals = explode(',' $value);
+                    $filter_query = implode(" OR ", array_fill(0, count($vals), "`$filter` <> ?"));
+                    if(count($query) > 1)
+                        $query[0].= " AND ";
+                    $query[0].= "($filter_query)";
+                    $query = array_merge($query, $vals);
+                } else if(substr($filter, -5) == "_from" && in_array(substr($filter, 0, -5), $fields) { // larger than
+                    // There should only be one value in this case, so no explodes and fills and so
+                    if(count($query) > 1)
+                        $query[0].= " AND ";
+                    $query[0].= "(`$filter` >= ?)";
+                    $query[] = $value;
+                } else if(substr($filter, -3) == "_to" && in_array(substr($filter, 0, -3), $fields) { // smaller than
+                    // There should only be one value in this case, so no explodes and fills and so
+                    if(count($query) > 1)
+                        $query[0].= " AND ";
+                    $query[0].= "(`$filter` <= ?)";
+                    $query[] = $value;
+                }
+            }
+        }
+        // Here we should add sorting, if requested
+        if(isset($f3["GET.sort"]))
+            $f3->error(400, "Sorting is not yet implemented");
+        // Here we should paginate, if requested
+        if(isset($f3["GET.page"])) {
+        }
         $list = $model->find($query);
 
         echo $this->manyToJson($list);
