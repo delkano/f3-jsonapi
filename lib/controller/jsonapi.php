@@ -192,7 +192,7 @@ class JsonApi {
             ],
             "data" => $this->oneToArray($object)
         ];
-        return json_encode($arr);
+        return json_encode($arr, JSON_UNESCAPED_SLASHES);
     }
 
     protected function manyToJson($list) {
@@ -206,7 +206,7 @@ class JsonApi {
         foreach($list?:[] as $item) {
             $arr["data"][] = $this->oneToArray($item);
         }
-        return json_encode($arr);
+        return json_encode($arr, JSON_UNESCAPED_SLASHES);
     }
 
     protected function oneToArray($object) {
