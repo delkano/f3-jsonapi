@@ -5,6 +5,9 @@ namespace Controller;
  * This Class is not meant to be extended. It's for internal use only.
  */
 class Fallback extends Restricted {
+    public function __construct() {
+        parent::__construct(""); 
+    }
     public function beforeroute($f3,$args) {
         if($f3->exists("models.${args['plural']}"))
             $this->model = $f3['models'][$args['plural']];

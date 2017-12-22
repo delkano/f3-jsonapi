@@ -8,7 +8,7 @@ namespace Controller;
  */
 
 class Restricted extends JsonApi {
-    public function __construct($model, $blacklist=[], $accepted_roles=['ADMIN'], $owner_field='user', $user_var='user', $role_var='role') {
+    public function __construct($model, $blacklist=[], $accepted_roles=['ADMIN'], $owner_field='owner', $user_var='user', $role_var='role') {
         parent::__construct($model, $blacklist);
 
         $this->accepted_roles = $accepted_roles;
@@ -21,7 +21,7 @@ class Restricted extends JsonApi {
         $f3 = \Base::instance();
         if($f3->exists($this->user_var)) {
             $user = $f3->user;
-            if(in_array($user->get("role_var"), $accepted_roles)) {
+            if(in_array($user->get($this->role_var), $this->accepted_roles)) {
                 if(!empty($query)) $query[0].= " AND";
                 $query[0].= "`$this->owner_field`=?";
                 $query[] = $user->id;
@@ -35,7 +35,7 @@ class Restricted extends JsonApi {
         $f3 = \Base::instance();
         if($f3->exists($this->user_var)) {
             $user = $f3->get($this->user_var);
-            if(in_array($user->get("role_var"), $accepted_roles)) {
+            if(in_array($user->get($this->role_var), $this->accepted_roles)) {
                 if(!empty($query)) $query[0].= " AND";
                 $query[0].= "`".$this->owner_field."_id`=?";
                 $query[] = $user->id;
@@ -45,13 +45,14 @@ class Restricted extends JsonApi {
     }
 
     protected function processInput($vars, $obj) {
+        $f3 = \Base::instance();
         if($f3->exists($this->user_var)) {
             $user = $f3->get($this->user_var);
         
             if($obj->dry()) //New object 
-                $obj->set("owner_field", $user);
-            else if($obj->get("owner_field") !== $user && !in_array($user->get("role_var"), $this->accepted_roles))
-                $f3->error(403, "You have not the permissions required to see this.");
+                $obj->set($this->owner_field, $user);
+            else if($obj->get($this->owner_field) !== $user && !in_array($user->get($this->role_var), $this->accepted_roles))
+                $f3->error(403, "You have not the permissions required to do this.");
 
             return $vars;
         } else $f3->error(403, "You are not authenticated"); 

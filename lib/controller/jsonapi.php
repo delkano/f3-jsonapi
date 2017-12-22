@@ -13,7 +13,7 @@ class JsonApi {
      * @model String with the related model for this controller
      * @blacklist Array of fields that must not be shown/returned (ie, 'password')
      */
-    public function __construct($model="", $blacklist = []) {
+    public function __construct($model, $blacklist = []) {
         $this->model = $model;
         $this->blacklist = $blacklist;
     }
@@ -100,7 +100,10 @@ class JsonApi {
     public function update($f3, $params) {
         $id = intval($params['id']);
         $model = $this->getModel();
-        $model->load(["id=?", $id]);
+
+        $query = ["id=?", $id];
+        $query = $this->processSingleQuery($query); // Allows customization in children
+        $model->load($query);
 
         if($model->dry()) {
             $f3->error(404, $this->model." id: ".$id." was not found in the database");
@@ -110,47 +113,117 @@ class JsonApi {
 
     public function delete($f3, $params) {
         $id = intval($params['id']);
+        $model = $this->getModel();
+
+        $query = ["id=?", $id];
+        $query = $this->processSingleQuery($query); // Allows customization in children
+        $model->load($query);
+
+        if($model->dry()) {
+            $f3->error(404, $this->model." id: ".$id." was not found in the database");
+        }
+
+        $model->erase();
+
+        $arr = [
+            "meta" => []
+        ];
+        echo json_encode($arr, JSON_UNESCAPED_SLASHES);
     }
 
     public function relationships($f3, $params) {
         $id = intval($params['id']);
         $relationship = $params['relationship'];
+
+        $model = $this->getModel();
+        $model->load(["id=?", $id]);
+
+        if($model->dry()) {
+            $f3->error(404, $this->model." id: ".$id." was not found in the database");
+        }
+
+        $fields = $model->getFieldConfiguration();
+        $relType = $fields[$relationship]['relType'];
+        if(!empty($fields[$relationship][$relType])) {
+            $class =explode("\\", $fields[$relationship][$relType][0]);
+            $type = $this->findPlural(end($class));
+        } else { $type = $relationship; }
+
+        $list = $model->get($relationship);
+
+        // This works for 'has-many' but not for 'belongs-to-one' yet
+        $arr = [
+            "links" => [
+                "self" => "/api/".$this->plural."/$id/relationships/".$relationship,
+                "related" => "/api/".$this->plural."/$id/".$relationship
+            ],
+            "data" => []
+        ];
+
+        foreach($list?:[] as $entry) {
+            $arr["data"][] = [
+                "type" => $type,
+                "id" => $entry['_id']
+            ];
+        }
+        echo json_encode($arr);
     }
 
     public function related($f3, $params) {
         $id = intval($params['id']);
+        $model = $this->getModel();
+        $model->load(["id=?", $id]);
+
+        if($model->dry()) {
+            $f3->error(404, $this->model." id: ".$id." was not found in the database");
+        }
+
         $related = $params['related'];
+
+        $list = $model->get($related);
+        
+        $this->plural = $related;
+        echo $this->manyToJson($list);
     }
 
     /* Helper methods */
 
     protected function save($f3, $obj) {
         $vars = json_decode($f3->BODY, true); // 'true' makes it an array (to avoid issues with dashed names)
+        $vars = $vars["data"];
         $vars = $this->processInput($vars, $obj); 
+        $f3->log->write(var_export($vars, true));
         $valid_fields = array_keys($obj->cast(null, 0));
+        $attributes = $vars["attributes"];
         // Update all standard fields
         foreach($valid_fields?:[] as $key) {
-            if( !empty($vars[$key]) 
+            if( !empty($attributes[$key]) 
                 || $obj->fieldConf[$key]["nullable"]) {
-                $obj->$key = $vars[$key];
+                $obj->$key = $attributes[$key];
             }
         }
         // Update relationships
         foreach($vars["relationships"]?:[] as $rel => $data) {
             if(in_array($rel, $valid_fields)) {
-                if(is_array($data['data'])) {
+                if(!isset($data['data'])) $f3->error(400, "Malformed payload");
+                $data = $data['data'];
+                if(is_array($data) && !$this->is_assoc($data)) {
                     $rels = [];
-                    foreach($data['data']?:[] as $entry) {
+                    foreach($data?:[] as $entry) {
                         $rels[] = intval($entry['id']);
                     }
                     $obj->$rel = $rels;
                 } else {
-                    $obj->$rel = intval($data['data']['id']);
+                    $obj->$rel = intval($data['id']);
                 }
             }
         }
         $obj->save();
         return $this->oneToJson($obj);
+    }
+
+    private function is_assoc(array $array) {
+        return count(array_filter(array_keys($array), 'is_string')) > 0;
     }
 
     /**
@@ -185,7 +258,8 @@ class JsonApi {
     }
 
     protected function oneToJson($object) {
-        $this->plural = $this->findPlural($this->model);
+        if(!$this->plural)
+            $this->plural = $this->findPlural($this->model);
         $arr = [
             "links" => [
                 "self" => "/api/".$this->plural."/".$object->id
@@ -196,7 +270,8 @@ class JsonApi {
     }
 
     protected function manyToJson($list) {
-        $this->plural = $this->findPlural($this->model);
+        if(!$this->plural)
+            $this->plural = $this->findPlural($this->model);
         $arr = [
             "links" => [
                 "self" => "/api/".$this->plural
@@ -223,13 +298,13 @@ class JsonApi {
             if(in_array($key, $this->blacklist)) continue;
 
             $relType = $fields[$key]['relType'];
-            if(!empty($fields[$key][$relType])) {
-                $class =explode("/", $fields[$key][$relType][0]);
-                $type = $this->findPlural(end($class));
-            } else { $type = $key; }
 
             switch($relType) {
             case 'has-many':
+                if(!empty($fields[$key][$relType])) {
+                    $class =explode("\\", $fields[$key][$relType][0]);
+                    $type = $this->findPlural(end($class));
+                } else { $type = $key; }
 
                 $ret["relationships"][$key] = [
                     "links" => [
@@ -245,7 +320,12 @@ class JsonApi {
                     ];
                 }
                 break;
-            case 'belongs-to': 
+            case 'belongs-to-one': 
+                if(!empty($fields[$key][$relType])) {
+                    $class =explode("\\", $fields[$key][$relType]);
+                    $type = $this->findPlural(end($class));
+                } else { $type = $key; }
+
                 $ret["relationships"][$key] = [
                     "links" => [
                         "self" => $link."/relationships/".$key,
@@ -253,7 +333,7 @@ class JsonApi {
                     ],
                     "data" => [
                         "type" => $type,
-                        "id" => $value->id
+                        "id" => $value["_id"]
                     ]
                 ];
                 break;
@@ -269,9 +349,7 @@ class JsonApi {
     protected function findPlural($name) {
         $f3 = \Base::instance();
         if(!empty($name) && $f3->models) {
-            echo $name;
             $keys = array_flip($f3->models);
-            print_r($keys);
             if(isset($keys[$name])) return $keys[$name];
         }
         return $name."s";
