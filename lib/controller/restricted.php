@@ -21,8 +21,8 @@ class Restricted extends JsonApi {
         $f3 = \Base::instance();
         if($f3->exists($this->user_var)) {
             $user = $f3->user;
-            if(in_array($user->get($this->role_var), $this->accepted_roles)) {
-                if(!empty($query)) $query[0].= " AND";
+            if(!in_array($user->get($this->role_var), $this->accepted_roles)) {
+                if(!empty($query)) $query[0].= " AND ";
                 $query[0].= "`$this->owner_field`=?";
                 $query[] = $user->id;
             }
@@ -35,8 +35,8 @@ class Restricted extends JsonApi {
         $f3 = \Base::instance();
         if($f3->exists($this->user_var)) {
             $user = $f3->get($this->user_var);
-            if(in_array($user->get($this->role_var), $this->accepted_roles)) {
-                if(!empty($query)) $query[0].= " AND";
+            if(!in_array($user->get($this->role_var), $this->accepted_roles)) {
+                if(!empty($query)) $query[0].= " AND ";
                 $query[0].= "`".$this->owner_field."_id`=?";
                 $query[] = $user->id;
             }

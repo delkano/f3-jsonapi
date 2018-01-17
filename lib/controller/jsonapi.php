@@ -219,6 +219,7 @@ class JsonApi {
             }
         }
         $obj->save();
+        $this->postSave($obj); // Post-Save hook
         return $this->oneToJson($obj);
     }
 
@@ -234,6 +235,7 @@ class JsonApi {
     protected function processInput($vars, $obj) {
         return $vars;
     }
+    protected function postSave($obj) {}
     
     /**
      * processSingleQuery and processListQuery get a query in the form of an array
