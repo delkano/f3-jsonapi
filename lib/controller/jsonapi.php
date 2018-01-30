@@ -43,14 +43,21 @@ class JsonApi {
         // Query creation
         $query = [""];
         $query = $this->processListQuery($query); // Allows customization in children
-        // We don't support includes, for the time being
+        // TODO We don't support includes, for the time being
         if(isset($f3["GET.include"]))
             $f3->error(400, "Include is not yet implemented");
         // Here we evaluate a few common filters, if any exist.
         if(isset($f3["GET.filter"])) {
             $filters = $f3["GET.filter"];
-            $fields = array_keys($object->getFieldConfiguration());
+            $fields = array_keys($model->getFieldConfiguration());
             // We want: field equals, field from, field to, field not equals.
+            $endings = [
+                "not" => "!=",
+                "from" => ">=",
+                "to" => "<=",
+                "over" => ">",
+                "under" => "<"
+            ];
             foreach($filters as $filter=>$value) {
                 if(in_array($filter, $fields)) { // equals
                     $vals = explode(',', $value);
@@ -59,32 +66,21 @@ class JsonApi {
                         $query[0].= " AND ";
                     $query[0].= "($filter_query)";
                     $query = array_merge($query, $vals);
-                } else if(substr($filter, -4) == "_not" && in_array(substr($filter, 0, -4), $fields)) { // not equals
-                    $vals = explode(',', $value);
-                    $filter_query = implode(" OR ", array_fill(0, count($vals), "`$filter` <> ?"));
-                    if(count($query) > 1)
-                        $query[0].= " AND ";
-                    $query[0].= "($filter_query)";
-                    $query = array_merge($query, $vals);
-                } else if(substr($filter, -5) == "_from" && in_array(substr($filter, 0, -5), $fields)) { // larger than
-                    // There should only be one value in this case, so no explodes and fills and so
-                    if(count($query) > 1)
-                        $query[0].= " AND ";
-                    $query[0].= "(`$filter` >= ?)";
-                    $query[] = $value;
-                } else if(substr($filter, -3) == "_to" && in_array(substr($filter, 0, -3), $fields)) { // smaller than
-                    // There should only be one value in this case, so no explodes and fills and so
-                    if(count($query) > 1)
-                        $query[0].= " AND ";
-                    $query[0].= "(`$filter` <= ?)";
-                    $query[] = $value;
+                } else foreach($endings as $end => $sign) {
+                    $l = -1 - strlen($end);
+                    if(substr($filter, $l) == "_$end" && in_array(substr($filter, 0, $l), $fields)) {
+                        if(count($query) > 1)
+                            $query[0].= " AND ";
+                        $query[0].= "(`".substr($filter, 0, $l)."` $sign ?)";
+                        $query[] = $value;
+                    }
                 }
             }
         }
-        // Here we should add sorting, if requested
+        // TODO Here we should add sorting, if requested
         if(isset($f3["GET.sort"]))
             $f3->error(400, "Sorting is not yet implemented");
-        // Here we should paginate, if requested
+        // TODO Here we should paginate, if requested
         if(isset($f3["GET.page"])) {
         }
         $list = $model->find($query);
@@ -190,9 +186,11 @@ class JsonApi {
 
     protected function save($f3, $obj) {
         $vars = json_decode($f3->BODY, true); // 'true' makes it an array (to avoid issues with dashed names)
+        if(!isset($vars["data"])) {
+            $f3->error(400, "Malformed payload");
+        }
         $vars = $vars["data"];
         $vars = $this->processInput($vars, $obj); 
-        $f3->log->write(var_export($vars, true));
         $valid_fields = array_keys($obj->cast(null, 0));
         $attributes = $vars["attributes"];
         // Update all standard fields
