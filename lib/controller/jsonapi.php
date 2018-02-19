@@ -84,8 +84,8 @@ class JsonApi {
 
         // Here we paginate, if requested
         if(isset($f3["GET.page"])) {
-            $pos = int($f3["GET.page.number"])?:0;
-            $limit = int($f3["GET.page.size"])?:10; // Default should actually be in config.ini
+            $pos = intval($f3["GET.page.number"])?:0;
+            $limit = intval($f3["GET.page.size"])?:10; // Default should actually be in config.ini
             $list = $model->paginate($pos, $limit, $query);
         } else 
             $list = $model->find($query);
@@ -287,12 +287,12 @@ class JsonApi {
         if(isset($list["subset"])) { // We have pagination here
             $link = "/api/".$this->plural."?page[size]=".$list["limit"]."&page[number]=";
             $arr["links"]["first"] = $link."0";
-            $arr["links"]["last"] = $link.$list["count"];
+            $arr["links"]["last"] = $link.($list["count"]-1);
             $current = $list["pos"];
             $arr["links"]["prev"] = ($current>0)? $link.($current-1) : null;
-            $arr["links"]["next"] = ($current<$list["count"])? $link.($current+1) : null;
+            $arr["links"]["next"] = ($current<=($list["count"]-1))? $link.($current+1) : null;
 
-            $list = $list["subset"]
+            $list = $list["subset"];
         }
 
         foreach($list?:[] as $item) {
