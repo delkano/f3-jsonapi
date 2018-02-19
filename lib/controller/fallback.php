@@ -4,7 +4,7 @@ namespace Controller;
 /**
  * This Class is not meant to be extended. It's for internal use only.
  */
-class Fallback extends Restricted {
+class Fallback extends Readable {
     public function __construct() {
         parent::__construct(""); 
     }

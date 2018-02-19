@@ -78,12 +78,17 @@ class JsonApi {
             }
         }
         // TODO Here we should add sorting, if requested
-        if(isset($f3["GET.sort"]))
+        if(isset($f3["GET.sort"])) {
             $f3->error(400, "Sorting is not yet implemented");
-        // TODO Here we should paginate, if requested
-        if(isset($f3["GET.page"])) {
         }
-        $list = $model->find($query);
+
+        // Here we paginate, if requested
+        if(isset($f3["GET.page"])) {
+            $pos = int($f3["GET.page.number"])?:0;
+            $limit = int($f3["GET.page.size"])?:10; // Default should actually be in config.ini
+            $list = $model->paginate($pos, $limit, $query);
+        } else 
+            $list = $model->find($query);
 
         echo $this->manyToJson($list);
     }
@@ -272,12 +277,24 @@ class JsonApi {
     protected function manyToJson($list) {
         if(!$this->plural)
             $this->plural = $this->findPlural($this->model);
+
         $arr = [
             "links" => [
                 "self" => "/api/".$this->plural
             ],
             "data" => []
         ];
+        if(isset($list["subset"])) { // We have pagination here
+            $link = "/api/".$this->plural."?page[size]=".$list["limit"]."&page[number]=";
+            $arr["links"]["first"] = $link."0";
+            $arr["links"]["last"] = $link.$list["count"];
+            $current = $list["pos"];
+            $arr["links"]["prev"] = ($current>0)? $link.($current-1) : null;
+            $arr["links"]["next"] = ($current<$list["count"])? $link.($current+1) : null;
+
+            $list = $list["subset"]
+        }
+
         foreach($list?:[] as $item) {
             $arr["data"][] = $this->oneToArray($item);
         }
