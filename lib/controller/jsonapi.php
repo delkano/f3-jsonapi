@@ -290,7 +290,7 @@ class JsonApi {
             $arr["links"]["last"] = $link.($list["count"]-1);
             $current = $list["pos"];
             $arr["links"]["prev"] = ($current>0)? $link.($current-1) : null;
-            $arr["links"]["next"] = ($current<=($list["count"]-1))? $link.($current+1) : null;
+            $arr["links"]["next"] = ($current<($list["count"]-1))? $link.($current+1) : null;
 
             $list = $list["subset"];
         }
