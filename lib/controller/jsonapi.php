@@ -143,16 +143,21 @@ class JsonApi {
             $f3->error(404, $this->model." id: ".$id." was not found in the database");
         }
 
+        if(!$this->plural)
+            $this->plural = $this->findPlural($this->model);
+
         $fields = $model->getFieldConfiguration();
         $relType = $fields[$relationship]['relType'];
         if(!empty($fields[$relationship][$relType])) {
-            $class =explode("\\", $fields[$relationship][$relType][0]);
+            if($relType == 'belongs-to-one')
+                $class =explode('\\', $fields[$relationship][$relType]);
+            else
+                $class =explode('\\', $fields[$relationship][$relType][0]);
+
             $type = $this->findPlural(end($class));
         } else { $type = $relationship; }
 
-        $list = $model->get($relationship);
 
-        // This works for 'has-many' but not for 'belongs-to-one' yet
         $arr = [
             "links" => [
                 "self" => "/api/".$this->plural."/$id/relationships/".$relationship,
@@ -161,11 +166,23 @@ class JsonApi {
             "data" => []
         ];
 
-        foreach($list?:[] as $entry) {
-            $arr["data"][] = [
+        if($relType == 'belongs-to-one') {
+            $obj = $model->get($relationship);
+
+            $arr['data'] = [
                 "type" => $type,
-                "id" => $entry['_id']
+                "id" => $obj['_id']
             ];
+
+        } else { // Assuming 'has-many'
+            $list = $model->get($relationship);
+
+            foreach($list?:[] as $entry) {
+                $arr["data"][] = [
+                    "type" => $type,
+                    "id" => $entry['_id']
+                ];
+            }
         }
         echo json_encode($arr);
     }
@@ -178,19 +195,28 @@ class JsonApi {
         if($model->dry()) {
             $f3->error(404, $this->model." id: ".$id." was not found in the database");
         }
-
         $related = $params['related'];
+
+        $fields = $model->getFieldConfiguration();
+        $relType = $fields[$related]['relType'];
 
         $list = $model->get($related);
         
-        $this->plural = $related;
-        echo $this->manyToJson($list);
+
+        if($relType == 'belongs-to-one') {
+            $this->plural = $this->findPlural($related);
+            echo $this->oneToJson($list);
+        } else {
+            $this->plural = $related;
+            echo $this->manyToJson($list);
+        }
     }
 
     /* Helper methods */
 
     protected function save($f3, $obj) {
         $vars = json_decode($f3->BODY, true); // 'true' makes it an array (to avoid issues with dashed names)
+        //$f3->log->write(var_export($vars, true));
         if(!isset($vars["data"])) {
             $f3->error(400, "Malformed payload");
         }
@@ -217,7 +243,7 @@ class JsonApi {
                     }
                     $obj->$rel = $rels;
                 } else {
-                    $obj->$rel = intval($data['id']);
+                    $obj->$rel = $data['id']?intval($data['id']):null;
                 }
             }
         }
@@ -269,7 +295,7 @@ class JsonApi {
             "links" => [
                 "self" => "/api/".$this->plural."/".$object->id
             ],
-            "data" => $this->oneToArray($object)
+            "data" => ($object&&!$object->dry())?$this->oneToArray($object):null
         ];
         return json_encode($arr, JSON_UNESCAPED_SLASHES);
     }
