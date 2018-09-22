@@ -32,7 +32,7 @@ I will write some documentation for them, but for now you can check the JsonApi 
 
 ## Current status
 
-  * The base controller is mostly written, only lacking some query parameters (pagination, includes and so)
+  * The base controller is mostly written, only lacking some query parameters (includes and sorting)
   * A readable controller, for those objects that can only be edited by their creators but pubicly read, is written but untested
   * A restricted controller, for those objects that can only be accessed by their creators, is written but untested
   * The fallback controller, which is assigned to any models without an explicit controller, defaults to readable
