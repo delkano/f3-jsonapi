@@ -82,6 +82,7 @@ class JsonApi {
             $f3->error(400, "Sorting is not yet implemented");
         }
 
+        //$f3->log->write(var_export($query, true));
         // Here we paginate, if requested
         if(isset($f3["GET.page"])) {
             $pos = intval($f3["GET.page.number"])?:0;
@@ -177,6 +178,8 @@ class JsonApi {
         } else { // Assuming 'has-many'
             $list = $model->get($relationship);
 
+            $this->orderRelationship($relationship, $list);
+
             foreach($list?:[] as $entry) {
                 $arr["data"][] = [
                     "type" => $type,
@@ -208,6 +211,7 @@ class JsonApi {
             echo $this->oneToJson($list);
         } else {
             $this->plural = $related;
+            $this->orderRelationship($related, $list);
             echo $this->manyToJson($list);
         }
     }
@@ -283,6 +287,15 @@ class JsonApi {
     {
         return $query;
     }
+    /**
+     * orderRelationship exists to be overriden by children which need some 
+     * ordered relationship.
+     */
+    protected function orderRelationship($relationname, $collection)
+    {
+        return null;
+    }
+
     protected function getModel() {
         $class= "\Model\\".$this->model;
         return new $class;
@@ -381,6 +394,7 @@ class JsonApi {
                 ];
                 break;
             default: 
+                $key = str_replace("_", "-", $key);
                 $ret["attributes"][$key] = $value;
                 break;
             }

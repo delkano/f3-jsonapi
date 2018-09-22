@@ -8,7 +8,7 @@ namespace Controller;
  */
 
 class Readable extends JsonApi {
-    public function __construct($model, $blacklist=[], $accepted_roles=['ADMIN'], $owner_field='owner', $user_var='user', $role_var='role') {
+    public function __construct($model, $blacklist=[], $accepted_roles=['ADMIN'], $owner_field='creator', $user_var='user', $role_var='role') {
         parent::__construct($model, $blacklist);
 
         $this->accepted_roles = $accepted_roles;
