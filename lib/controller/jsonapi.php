@@ -62,14 +62,14 @@ class JsonApi {
                 if(in_array($filter, $fields)) { // equals
                     $vals = explode(',', $value);
                     $filter_query = implode(" OR ", array_fill(0, count($vals), "`$filter` = ?"));
-                    if(count($query) > 1)
+                    if(!empty($query[0]))
                         $query[0].= " AND ";
                     $query[0].= "($filter_query)";
                     $query = array_merge($query, $vals);
                 } else foreach($endings as $end => $sign) {
                     $l = -1 - strlen($end);
                     if(substr($filter, $l) == "_$end" && in_array(substr($filter, 0, $l), $fields)) {
-                        if(count($query) > 1)
+                        if(!empty($query[0]))
                             $query[0].= " AND ";
                         $query[0].= "(`".substr($filter, 0, $l)."` $sign ?)";
                         $query[] = $value;
@@ -82,7 +82,7 @@ class JsonApi {
             $f3->error(400, "Sorting is not yet implemented");
         }
 
-        //$f3->log->write(var_export($query, true));
+        $f3->log->write(var_export($query, true));
         // Here we paginate, if requested
         if(isset($f3["GET.page"])) {
             $pos = intval($f3["GET.page.number"])?:0;

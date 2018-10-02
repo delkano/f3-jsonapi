@@ -27,7 +27,7 @@ class Readable extends JsonApi {
                     $obj->set($this->owner_field, $user); // We're not an admin or we're not trying to set the owner
                 else
                     $obj->set($this->owner_field, $vars["attributes"][$this->owner_field]);
-            } else if($obj->get($this->owner_field) !== $user && !in_array($user->get($this->role_var), $this->accepted_roles))
+            } else if($obj->get($this->owner_field)->id != $user->id && !in_array($user->get($this->role_var), $this->accepted_roles))
                 $f3->error(403, "You have not the permissions required to do this.");
 
             return $vars;
