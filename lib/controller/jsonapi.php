@@ -363,6 +363,8 @@ class JsonApi {
 
             switch($relType) {
             case 'has-many':
+                // We've added "async" to the Cortex Model definition.
+                if(!empty($fields[$key]["async"])) break;
                 if(!empty($fields[$key][$relType])) {
                     $class =explode("\\", $fields[$key][$relType][0]);
                     $type = $this->findPlural(end($class));
@@ -377,10 +379,12 @@ class JsonApi {
                 ];
 
                 // This reduces the risk of memory exhaustion on large sets
-                $i = 0; $l=100;
+                $i = 0; $l=10;
+                $object->countRel($key);
                 do {
                     $object->filter($key,null,['limit'=>$l,'offset'=>$i*$l]);
                     $object->load(["id=?", $object->id]);
+                    $count = $object["count_$key"] ."- ";
                     foreach($object->$key?:[] as $entry) {
                         $ret["relationships"][$key]["data"][] = [
                             "type" => $type,
@@ -388,7 +392,7 @@ class JsonApi {
                         ];
                     }
                     $i++;
-                } while($object->$key);
+                } while($i*$l < $count && $object->$key);
                 break;
             case 'belongs-to-one': 
                 if(!empty($fields[$key][$relType])) {
@@ -403,7 +407,7 @@ class JsonApi {
                     ],
                     "data" => [
                         "type" => $type,
-                        "id" => $value["_id"]
+                        "id" => $value
                     ]
                 ];
                 break;
