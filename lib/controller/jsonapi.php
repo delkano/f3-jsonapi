@@ -82,7 +82,7 @@ class JsonApi {
             $f3->error(400, "Sorting is not yet implemented");
         }
 
-        $f3->log->write(var_export($query, true));
+        //$f3->log->write(var_export($query, true));
         // Here we paginate, if requested
         if(isset($f3["GET.page"])) {
             $pos = intval($f3["GET.page.number"])?:0;
@@ -91,7 +91,9 @@ class JsonApi {
         } else 
             $list = $model->find($query);
 
-        echo $this->manyToJson($list);
+        $r = $this->manyToJson($list);
+        $f3->log->write($r);
+        echo $r;
     }
 
     public function create($f3) {
@@ -204,15 +206,15 @@ class JsonApi {
         $relType = $fields[$related]['relType'];
 
         $list = $model->get($related);
-        
+
 
         if($relType == 'belongs-to-one') {
-            $this->plural = $this->findPlural($related);
-            echo $this->oneToJson($list);
-        } else {
-            $this->plural = $related;
+            $controller = "\\Controller\\".end(explode("\\", $fields[$related][$relType]));
+            echo (new $controller)->oneToJson($list);
+        } else { // has-many. If it's a different thing maybe I'll find a problem later
+            $controller = "\\Controller\\".end(explode("\\", $fields[$related][$relType][0]));
             $this->orderRelationship($related, $list);
-            echo $this->manyToJson($list);
+            echo (new $controller)->manyToJson($list);
         }
     }
 
@@ -220,18 +222,20 @@ class JsonApi {
 
     protected function save($f3, $obj) {
         $vars = json_decode($f3->BODY, true); // 'true' makes it an array (to avoid issues with dashed names)
-        //$f3->log->write(var_export($vars, true));
         if(!isset($vars["data"])) {
             $f3->error(400, "Malformed payload");
         }
         $vars = $vars["data"];
         $vars = $this->processInput($vars, $obj); 
         $valid_fields = array_keys($obj->cast(null, 0));
+        $conf = $obj->getFieldConfiguration();
         $attributes = $vars["attributes"];
         // Update all standard fields
         foreach($valid_fields?:[] as $key) {
-            if( !empty($attributes[$key]) 
-                || $obj->fieldConf[$key]["nullable"]) {
+            if(
+                isset($attributes[$key]) // Since this includes the valid values "0" and false, ...
+                || ($attributes[$key] === null && $conf[$key]["nullable"])
+            ) {
                 $obj->$key = $attributes[$key];
             }
         }
@@ -247,6 +251,7 @@ class JsonApi {
                     }
                     $obj->$rel = $rels;
                 } else {
+                    $f3->log->write(var_export($data, true));
                     $obj->$rel = $data['id']?intval($data['id']):null;
                 }
             }
@@ -334,6 +339,7 @@ class JsonApi {
             $list = $list["subset"];
         }
 
+        $this->number = 0;
         foreach($list?:[] as $item) {
             $arr["data"][] = $this->oneToArray($item);
         }
@@ -341,7 +347,7 @@ class JsonApi {
     }
 
     protected function oneToArray($object) {
-        $arr = $object->cast(); 
+        $arr = $object->cast(null,0); 
         $fields = $object->getFieldConfiguration();
         $link = "/api/".$this->plural."/".$object->id;
         $ret = [
@@ -369,12 +375,20 @@ class JsonApi {
                     ],
                     "data" => []
                 ];
-                foreach($value?:[] as $entry) {
-                    $ret["relationships"][$key]["data"][] = [
-                        "type" => $type,
-                        "id" => $entry['_id']
-                    ];
-                }
+
+                // This reduces the risk of memory exhaustion on large sets
+                $i = 0; $l=100;
+                do {
+                    $object->filter($key,null,['limit'=>$l,'offset'=>$i*$l]);
+                    $object->load(["id=?", $object->id]);
+                    foreach($object->$key?:[] as $entry) {
+                        $ret["relationships"][$key]["data"][] = [
+                            "type" => $type,
+                            "id" => $entry['_id']
+                        ];
+                    }
+                    $i++;
+                } while($object->$key);
                 break;
             case 'belongs-to-one': 
                 if(!empty($fields[$key][$relType])) {
