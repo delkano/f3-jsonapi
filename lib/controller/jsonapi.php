@@ -60,7 +60,8 @@ class JsonApi {
             ];
             foreach($filters as $filter=>$value) {
                 if(in_array($filter, $fields)) { // equals
-                    $vals = explode(',', $value);
+                    $nullify = function($a) { return $a=="NULL"?NULL:$a; };
+                    $vals = array_map($nullify, explode(',', $value));
                     $filter_query = implode(" OR ", array_fill(0, count($vals), "`$filter` = ?"));
                     if(!empty($query[0]))
                         $query[0].= " AND ";
@@ -82,7 +83,7 @@ class JsonApi {
             $f3->error(400, "Sorting is not yet implemented");
         }
 
-        //$f3->log->write(var_export($query, true));
+        $f3->log->write(var_export($query, true));
         // Here we paginate, if requested
         if(isset($f3["GET.page"])) {
             $pos = intval($f3["GET.page.number"])?:0;
@@ -378,13 +379,23 @@ class JsonApi {
                     "data" => []
                 ];
 
+                \Base::instance()->log->write("Loading: $key from $this->plural");
+                foreach($object->$key?:[] as $entry) {
+                    $ret["relationships"][$key]["data"][] = [
+                        "type" => $type,
+                        "id" => $entry['_id']
+                    ];
+                }
+                /*
                 // This reduces the risk of memory exhaustion on large sets
                 $i = 0; $l=10;
                 $object->countRel($key);
+                $count_key = "count_$key";
                 do {
                     $object->filter($key,null,['limit'=>$l,'offset'=>$i*$l]);
                     $object->load(["id=?", $object->id]);
-                    $count = $object["count_$key"] ."- ";
+                    $count = $object->$count_key;
+                    echo $count."\n";
                     foreach($object->$key?:[] as $entry) {
                         $ret["relationships"][$key]["data"][] = [
                             "type" => $type,
@@ -392,7 +403,8 @@ class JsonApi {
                         ];
                     }
                     $i++;
-                } while($i*$l < $count && $object->$key);
+                } while($i*$l <= $count && $object->$key);
+                 */
                 break;
             case 'belongs-to-one': 
                 if(!empty($fields[$key][$relType])) {
