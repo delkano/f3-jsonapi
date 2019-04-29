@@ -42,7 +42,7 @@ class JsonApi {
         $model = $this->getModel();
         // Query creation
         $query = [""];
-        $query = $this->processListQuery($query); // Allows customization in children
+        $query = $this->processListQuery($query, $model); // Allows customization in children
         // TODO We don't support includes, for the time being
         if(isset($f3["GET.include"]))
             $f3->error(400, "Include is not yet implemented");
@@ -93,7 +93,7 @@ class JsonApi {
             $list = $model->find($query);
 
         $r = $this->manyToJson($list);
-        $f3->log->write($r);
+        $f3->log->write($f3->DB->log());
         echo $r;
     }
 
@@ -284,12 +284,12 @@ class JsonApi {
      * @query array
      * @return array
      */
-    protected function processSingleQuery($query)
+    protected function processSingleQuery($query, $model=null)
     {
         return $query;
     }
     
-    protected function processListQuery($query)
+    protected function processListQuery($query, $model=null)
     {
         return $query;
     }

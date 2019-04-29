@@ -22,7 +22,7 @@ class Restricted extends Readable {
         } else $f3->error(403, "You are not authenticated"); 
     }
     
-    protected function processListQuery($query)
+    protected function processListQuery($query, $model=null)
     {
         $f3 = \Base::instance();
         if($f3->exists($this->user_var)) {
