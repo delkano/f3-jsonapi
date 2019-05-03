@@ -78,9 +78,19 @@ class JsonApi {
                 }
             }
         }
-        // TODO Here we should add sorting, if requested
-        if(isset($f3["GET.sort"])) {
-            $f3->error(400, "Sorting is not yet implemented");
+        $options = [];
+        // Here we add sorting, if requested
+        if(!empty($f3["GET.sort"])) {
+            $terms = explode(",", $f3["GET.sort"]);
+            $terms = array_map(function($term) {
+                switch($term[0]) {
+                case "+": $ret = substr($term, 1)." ASC"; break;
+                case "-": $ret = substr($term, 1)." DESC";  break;
+                default: $ret = $term. " ASC"; break;
+                }
+                return $ret;
+            }, $terms);
+            $options["order"] = implode(",", $terms);
         }
 
         $f3->log->write(var_export($query, true));
@@ -88,9 +98,9 @@ class JsonApi {
         if(isset($f3["GET.page"])) {
             $pos = intval($f3["GET.page.number"])?:0;
             $limit = intval($f3["GET.page.size"])?:10; // Default should actually be in config.ini
-            $list = $model->paginate($pos, $limit, $query);
+            $list = $model->paginate($pos, $limit, $query, $options);
         } else 
-            $list = $model->find($query);
+            $list = $model->find($query, $options);
 
         $r = $this->manyToJson($list);
         $f3->log->write($f3->DB->log());
@@ -379,7 +389,7 @@ class JsonApi {
                     "data" => []
                 ];
 
-                \Base::instance()->log->write("Loading: $key from $this->plural");
+                // \Base::instance()->log->write("Loading: $key from $this->plural");
                 foreach($object->$key?:[] as $entry) {
                     $ret["relationships"][$key]["data"][] = [
                         "type" => $type,
