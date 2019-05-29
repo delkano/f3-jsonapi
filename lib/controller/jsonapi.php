@@ -407,12 +407,16 @@ class JsonApi {
                     "data" => []
                 ];
 
-                // \Base::instance()->log->write("Loading: $key from $this->plural");
                 foreach($object->$key?:[] as $entry) {
-                    $ret["relationships"][$key]["data"][] = [
-                        "type" => $type,
-                        "id" => $entry['_id']
-                    ];
+                    if($includes) {
+                        $controller = "\\Controller\\".($class?end($class):$key);
+                        $ret["relationships"][$key]["data"][] = (new $controller)->oneToArray($entry);
+                    } else {
+                        $ret["relationships"][$key]["data"][] = [
+                            "type" => $type,
+                            "id" => $entry['_id']
+                        ];
+                    }
                 }
                 /*
                 // This reduces the risk of memory exhaustion on large sets
@@ -457,11 +461,18 @@ class JsonApi {
                         "self" => $link."/relationships/".$key,
                         "related" => $link."/".$key
                     ],
-                    "data" => [
+                    "data" => []
+                ];
+                if($includes && $object->key) {
+                    $controller = "\\Controller\\".($class?end($class):$key);
+                    $ret["relationships"][$key]["data"] = (new $controller)->oneToArray($object->$key);
+                } else {
+                    $ret["relationships"][$key]["data"] = [
                         "type" => $type,
                         "id" => $value
-                    ]
-                ];
+                    ];
+                }
+
                 break;
             default: 
                 $key = str_replace("_", "-", $key);
