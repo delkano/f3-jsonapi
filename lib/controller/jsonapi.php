@@ -22,9 +22,9 @@ class JsonApi {
     public function getOne($f3, $params) {
         $id = intval($params['id']);
 
-        // We don't support includes, for the time being
-        if(isset($f3["GET.include"]))
-            $f3->error(400, "Include is not yet implemented");
+        if(isset($f3["GET.include"])) {
+            $includes = explode(",", $f3["GET.include"]);
+        } else $includes = null;
 
         $model = $this->getModel();
         $query = ["id=?", $id];
@@ -35,17 +35,18 @@ class JsonApi {
             $f3->error(404, $this->model." id: ".$id." was not found in the database");
         }
 
-        echo $this->oneToJson($model);
+        echo $this->oneToJson($model, $includes);
     }
 
     public function getList($f3) {
         $model = $this->getModel();
         // Query creation
         $query = [""];
-        $query = $this->processListQuery($query, $model); // Allows customization in children
-        // TODO We don't support includes, for the time being
-        if(isset($f3["GET.include"]))
-            $f3->error(400, "Include is not yet implemented");
+
+        if(isset($f3["GET.include"])) {
+            $includes = explode(",", $f3["GET.include"]);
+        } else $includes = null;
+
         // Here we evaluate a few common filters, if any exist.
         if(isset($f3["GET.filter"])) {
             $filters = $f3["GET.filter"];
@@ -78,22 +79,26 @@ class JsonApi {
                 }
             }
         }
+        $query = $this->processListQuery($query, $model); // Allows customization in children
         $options = [];
         // Here we add sorting, if requested
         if(!empty($f3["GET.sort"])) {
             $terms = explode(",", $f3["GET.sort"]);
             $terms = array_map(function($term) {
+                $model = $this->getModel();
                 switch($term[0]) {
-                case "+": $ret = substr($term, 1)." ASC"; break;
-                case "-": $ret = substr($term, 1)." DESC";  break;
-                default: $ret = $term. " ASC"; break;
+                case "+": $word = substr($term, 1); $ord = " ASC"; break;
+                case "-": $word = substr($term, 1); $ord = " DESC";  break;
+                default: $word = $term; $ord = " ASC"; break;
                 }
-                return $ret;
+                if($model->exists($word))
+                    return $word.$ord;
+                else return false;
             }, $terms);
+            $terms = array_filter($terms, function($s){return $s;});
             $options["order"] = implode(",", $terms);
         }
 
-        $f3->log->write(var_export($query, true));
         // Here we paginate, if requested
         if(isset($f3["GET.page"])) {
             $pos = intval($f3["GET.page.number"])?:0;
@@ -102,7 +107,7 @@ class JsonApi {
         } else 
             $list = $model->find($query, $options);
 
-        $r = $this->manyToJson($list);
+        $r = $this->manyToJson($list, $includes);
         $f3->log->write($f3->DB->log());
         echo $r;
     }
@@ -255,14 +260,13 @@ class JsonApi {
             if(in_array($rel, $valid_fields)) {
                 if(!isset($data['data'])) $f3->error(400, "Malformed payload");
                 $data = $data['data'];
-                if(is_array($data) && !$this->is_assoc($data)) {
+                if($conf[$rel]['relType'] != "belongs-to-one" && is_array($data) && !$this->is_assoc($data)) {
                     $rels = [];
                     foreach($data?:[] as $entry) {
                         $rels[] = intval($entry['id']);
                     }
                     $obj->$rel = $rels;
                 } else {
-                    $f3->log->write(var_export($data, true));
                     $obj->$rel = $data['id']?intval($data['id']):null;
                 }
             }
@@ -313,23 +317,27 @@ class JsonApi {
     }
 
     protected function getModel() {
-        $class= "\Model\\".$this->model;
-        return new $class;
+        if($this->actualModel) return $this->actualModel;
+        else {
+            $class= "\Model\\".$this->model;
+            $this->actualModel = new $class;
+            return $this->actualModel;
+        }
     }
 
-    protected function oneToJson($object) {
+    protected function oneToJson($object, $includes=null) {
         if(!$this->plural)
             $this->plural = $this->findPlural($this->model);
         $arr = [
             "links" => [
                 "self" => "/api/".$this->plural."/".$object->id
             ],
-            "data" => ($object&&!$object->dry())?$this->oneToArray($object):null
+            "data" => ($object&&!$object->dry())?$this->oneToArray($object, $includes):null
         ];
         return json_encode($arr, JSON_UNESCAPED_SLASHES);
     }
 
-    protected function manyToJson($list) {
+    protected function manyToJson($list, $includes=false) {
         if(!$this->plural)
             $this->plural = $this->findPlural($this->model);
 
@@ -352,12 +360,12 @@ class JsonApi {
 
         $this->number = 0;
         foreach($list?:[] as $item) {
-            $arr["data"][] = $this->oneToArray($item);
+            $arr["data"][] = $this->oneToArray($item, $includes);
         }
         return json_encode($arr, JSON_UNESCAPED_SLASHES);
     }
 
-    protected function oneToArray($object) {
+    protected function oneToArray($object, $includes=false) {
         $arr = $object->cast(null,0); 
         $fields = $object->getFieldConfiguration();
         $link = "/api/".$this->plural."/".$object->id;
@@ -374,8 +382,18 @@ class JsonApi {
 
             switch($relType) {
             case 'has-many':
-                // We've added "async" to the Cortex Model definition.
-                if(!empty($fields[$key]["async"])) break;
+                if( ($includes && !in_array($key, $includes))
+                   || (!$includes && !empty($fields[$key]["async"]))) {
+                    // We've added "async" to the Cortex Model definition.
+                    // If there are no "includes" and it's async, or there are "includes" and it's not in it, skip
+                    $ret["relationships"][$key] = [
+                        "links" => [
+                            "self" => $link."/relationships/".$key,
+                            "related" => $link."/".$key
+                        ]
+                    ];
+                    break;   
+                }
                 if(!empty($fields[$key][$relType])) {
                     $class =explode("\\", $fields[$key][$relType][0]);
                     $type = $this->findPlural(end($class));
@@ -417,6 +435,18 @@ class JsonApi {
                  */
                 break;
             case 'belongs-to-one': 
+                if( ($includes && !in_array($key, $includes))
+                   || (!$includes && !empty($fields[$key]["async"]))) {
+                    // We've added "async" to the Cortex Model definition.
+                    // If there are no "includes" and it's async, or there are "includes" and it's not in it, skip
+                    $ret["relationships"][$key] = [
+                        "links" => [
+                            "self" => $link."/relationships/".$key,
+                            "related" => $link."/".$key
+                        ]
+                    ];
+                    break;   
+                }
                 if(!empty($fields[$key][$relType])) {
                     $class =explode("\\", $fields[$key][$relType]);
                     $type = $this->findPlural(end($class));
