@@ -263,9 +263,10 @@ class JsonApi {
                 if($conf[$rel]['relType'] != "belongs-to-one" && is_array($data) && !$this->is_assoc($data)) {
                     $rels = [];
                     foreach($data?:[] as $entry) {
-                        $rels[] = intval($entry['id']);
+                        if(!empty($entry['id']))
+                            $rels[] = intval($entry['id']);
                     }
-                    $obj->$rel = $rels;
+                    $obj->$rel = empty($rels)?null:$rels;
                 } else {
                     $obj->$rel = $data['id']?intval($data['id']):null;
                 }
@@ -368,6 +369,8 @@ class JsonApi {
     protected function oneToArray($object, $includes=false) {
         $arr = $object->cast(null,0); 
         $fields = $object->getFieldConfiguration();
+        if(!$this->plural)
+            $this->plural = $this->findPlural($this->model);
         $link = "/api/".$this->plural."/".$object->id;
         $ret = [
             "type" => $this->plural,
@@ -414,7 +417,7 @@ class JsonApi {
                     } else {
                         $ret["relationships"][$key]["data"][] = [
                             "type" => $type,
-                            "id" => $entry['_id']
+                            "id" => is_int($entry)?$entry:$entry['_id']
                         ];
                     }
                 }
@@ -463,7 +466,7 @@ class JsonApi {
                     ],
                     "data" => []
                 ];
-                if($includes && $object->key) {
+                if($includes && $object->$key) {
                     $controller = "\\Controller\\".($class?end($class):$key);
                     $ret["relationships"][$key]["data"] = (new $controller)->oneToArray($object->$key);
                 } else {
