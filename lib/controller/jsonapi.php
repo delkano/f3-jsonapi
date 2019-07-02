@@ -108,7 +108,6 @@ class JsonApi {
             $list = $model->find($query, $options);
 
         $r = $this->manyToJson($list, $includes);
-        $f3->log->write($f3->DB->log());
         echo $r;
     }
 
@@ -219,6 +218,9 @@ class JsonApi {
         $related = $params['related'];
 
         $fields = $model->getFieldConfiguration();
+        if(!isset($fields[$related])) {
+            $f3->error(404, "Relationship does not exist");
+        }
         $relType = $fields[$related]['relType'];
 
         $list = $model->get($related);
@@ -466,14 +468,20 @@ class JsonApi {
                     ],
                     "data" => []
                 ];
-                if($includes && $object->$key) {
-                    $controller = "\\Controller\\".($class?end($class):$key);
-                    $ret["relationships"][$key]["data"] = (new $controller)->oneToArray($object->$key);
+                if($object->key) {
+                    if($includes) {
+                        $controller = "\\Controller\\".($class?end($class):$key);
+                        if($object->$key) {
+                            $ret["relationships"][$key]["data"] = (new $controller)->oneToArray($object->$key);
+                        }
+                    } else {
+                        $ret["relationships"][$key]["data"] = [
+                            "type" => $type,
+                            "id" => $value
+                        ];
+                    }
                 } else {
-                    $ret["relationships"][$key]["data"] = [
-                        "type" => $type,
-                        "id" => $value
-                    ];
+                    $ret["relationships"][$key]["data"] = null;
                 }
 
                 break;
