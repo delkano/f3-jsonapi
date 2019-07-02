@@ -468,7 +468,7 @@ class JsonApi {
                     ],
                     "data" => []
                 ];
-                if($object->key) {
+                if($object->$key) {
                     if($includes) {
                         $controller = "\\Controller\\".($class?end($class):$key);
                         if($object->$key) {
