@@ -24,6 +24,16 @@ class JsonApi {
 
         if(isset($f3["GET.include"])) {
             $includes = explode(",", $f3["GET.include"]);
+
+            $includes = array_map(function($include) {
+                $divs = explode(".", $include);
+                if(count($divs)>1) 
+                    return $divs;
+                else
+                    return $include;
+                
+            }, $includes);
+
         } else $includes = null;
 
         $model = $this->getModel();
@@ -45,8 +55,55 @@ class JsonApi {
 
         if(isset($f3["GET.include"])) {
             $includes = explode(",", $f3["GET.include"]);
+
+            $includes = array_map(function($include) {
+                $divs = explode(".", $include);
+                if(count($divs)>1) 
+                    return $divs;
+                else
+                    return $include;
+                
+            }, $includes);
+
         } else $includes = null;
 
+        $query = $this->filterQuery($f3, $query);
+
+        $query = $this->processListQuery($query, $model); // Allows customization in children
+        $options = [];
+        // Here we add sorting, if requested
+        if(!empty($f3["GET.sort"])) {
+            $terms = explode(",", $f3["GET.sort"]);
+            $terms = array_map(function($term) {
+                $model = $this->getModel();
+                switch($term[0]) {
+                case "+": $word = substr($term, 1); $ord = " ASC"; break;
+                case "-": $word = substr($term, 1); $ord = " DESC";  break;
+                default: $word = $term; $ord = " ASC"; break;
+                }
+                if($model->exists($word))
+                    return $word.$ord;
+                else return false;
+            }, $terms);
+            //$terms = array_filter($terms, function($s){return $s;});
+	    $options["order"] = implode(",", $terms);
+        } else
+		$options["order"] = $this->defaultOrder?:null;
+
+        // Here we paginate, if requested
+        if(isset($f3["GET.page"])) {
+            $pos = intval($f3["GET.page.number"])?:0;
+            $limit = intval($f3["GET.page.size"])?:10; // Default should actually be in config.ini
+            $list = $model->paginate($pos, $limit, $query, $options);
+        } else 
+            $list = $model->find($query, $options);
+
+        $r = $this->manyToJson($list, $includes);
+        echo $r;
+    }
+
+    public function filterQuery($f3, $query) {
+        $model = $this->getModel();
         // Here we evaluate a few common filters, if any exist.
         if(isset($f3["GET.filter"])) {
             $filters = $f3["GET.filter"];
@@ -79,36 +136,7 @@ class JsonApi {
                 }
             }
         }
-        $query = $this->processListQuery($query, $model); // Allows customization in children
-        $options = [];
-        // Here we add sorting, if requested
-        if(!empty($f3["GET.sort"])) {
-            $terms = explode(",", $f3["GET.sort"]);
-            $terms = array_map(function($term) {
-                $model = $this->getModel();
-                switch($term[0]) {
-                case "+": $word = substr($term, 1); $ord = " ASC"; break;
-                case "-": $word = substr($term, 1); $ord = " DESC";  break;
-                default: $word = $term; $ord = " ASC"; break;
-                }
-                if($model->exists($word))
-                    return $word.$ord;
-                else return false;
-            }, $terms);
-            $terms = array_filter($terms, function($s){return $s;});
-            $options["order"] = implode(",", $terms);
-        }
-
-        // Here we paginate, if requested
-        if(isset($f3["GET.page"])) {
-            $pos = intval($f3["GET.page.number"])?:0;
-            $limit = intval($f3["GET.page.size"])?:10; // Default should actually be in config.ini
-            $list = $model->paginate($pos, $limit, $query, $options);
-        } else 
-            $list = $model->find($query, $options);
-
-        $r = $this->manyToJson($list, $includes);
-        echo $r;
+        return $query;
     }
 
     public function create($f3) {
@@ -207,15 +235,93 @@ class JsonApi {
         echo json_encode($arr);
     }
 
-    public function related($f3, $params) {
+    public function deleteRelationships($f3, $params) {
         $id = intval($params['id']);
+        $relationship = $params['relationship'];
         $model = $this->getModel();
+        $fields = $model->getFieldConfiguration();
+        if(!isset($fields[$relationship])) {
+            $f3->error(404, "Relationship does not exist");
+        }
+        $relType = $fields[$relationship]['relType'];
+
         $model->load(["id=?", $id]);
 
-        if($model->dry()) {
-            $f3->error(404, $this->model." id: ".$id." was not found in the database");
+        $model->$relationship = null;
+        $model->save();
+        $f3->status(204);
+    }
+
+    public function addRelationships($f3, $params) {
+        $id = intval($params['id']);
+        $relationship = $params['relationship'];
+        $model = $this->getModel();
+        $fields = $model->getFieldConfiguration();
+        if(!isset($fields[$relationship])) {
+            $f3->error(404, "Relationship does not exist");
         }
+        $relType = $fields[$relationship]['relType'];
+
+        if($relType != "has-many") {
+            $f3->error(400, "Bad request");
+        }
+        $model->load(["id=?", $id]);
+
+        $vars = json_decode($f3->BODY, true); // 'true' makes it an array (to avoid issues with dashed names)
+        if(!isset($vars["data"])) {
+            $f3->error(400, "Malformed payload");
+        }
+        $vars = $vars["data"];
+        $vars = $this->processInput($vars, $model); 
+        
+        if(!$model->$relationship) $model->$relationship = [];
+        foreach($vars as $rel) {
+            $rel_id = intval($rel["id"]);
+            // Insert check if id already there. If it is, do not insert. If all are, change return code to 204
+            $model->$relationship[] = intval($rel["id"]);
+        }
+        $model->save();
+
+        $this->relationships($f3, $params);
+    }
+    public function replaceRelationships($f3, $params) {
+        $id = intval($params['id']);
+        $relationship = $params['relationship'];
+        $model = $this->getModel();
+        $fields = $model->getFieldConfiguration();
+        if(!isset($fields[$relationship])) {
+            $f3->error(404, "Relationship does not exist");
+        }
+        $relType = $fields[$relationship]['relType'];
+
+        $model->load(["id=?", $id]);
+
+        $vars = json_decode($f3->BODY, true); // 'true' makes it an array (to avoid issues with dashed names)
+        if(!isset($vars["data"])) {
+            $f3->error(400, "Malformed payload");
+        }
+        $vars = $vars["data"];
+        $vars = $this->processInput($vars, $model); 
+        
+        if($relType == "has-many") {
+            $model->$relationship = [];
+            foreach($vars as $rel) {
+                $rel_id = intval($rel["id"]);
+                $model->$relationship[] = $rel_id;
+            }
+        } else {
+            $rel_id = $vars?intval($vars["id"]):null;
+            $model->relationship = $rel_id;
+        }
+        $model->save();
+
+        $this->relationships($f3, $params);
+    }
+
+    public function related($f3, $params) {
+        $id = intval($params['id']);
         $related = $params['related'];
+        $model = $this->getModel();
 
         $fields = $model->getFieldConfiguration();
         if(!isset($fields[$related])) {
@@ -223,14 +329,27 @@ class JsonApi {
         }
         $relType = $fields[$related]['relType'];
 
-        $list = $model->get($related);
+        if($relType == "has-many") {
+            $controllerName = "\\Controller\\".end(explode("\\", $fields[$related][$relType][0]));
+            // It should possibly be filtered. This requires first: getModel; then filterQuery; then manyToJson
+            $controller = new $controllerName;
+            $query = $controller->filterQuery($f3, []);
+            $model->filter($related, $query);
+        }
+        // We delay the actual loading of the model as to be able to use the Cortex "filter" method
+        $model->load(["id=?", $id]);
+
+        if($model->dry()) {
+            $f3->error(404, $this->model." id: ".$id." was not found in the database");
+        }
 
 
         if($relType == 'belongs-to-one') {
             $controller = "\\Controller\\".end(explode("\\", $fields[$related][$relType]));
+            $list = $model->get($related);
             echo (new $controller)->oneToJson($list);
         } else { // has-many. If it's a different thing maybe I'll find a problem later
-            $controller = "\\Controller\\".end(explode("\\", $fields[$related][$relType][0]));
+            $list = $model->get($related);
             $this->orderRelationship($related, $list);
             echo (new $controller)->manyToJson($list);
         }
@@ -331,11 +450,12 @@ class JsonApi {
     protected function oneToJson($object, $includes=null) {
         if(!$this->plural)
             $this->plural = $this->findPlural($this->model);
-        $arr = [
-            "links" => [
-                "self" => "/api/".$this->plural."/".$object->id
-            ],
-            "data" => ($object&&!$object->dry())?$this->oneToArray($object, $includes):null
+
+        $arr = ($object&&!$object->dry())?$this->oneToArray($object, $includes):[];
+        if(!isset($arr["data"]))
+            $arr = [ "data" => $arr ];
+        $arr["links"] = [
+            "self" => "/api/".$this->plural."/".$object->id
         ];
         return json_encode($arr, JSON_UNESCAPED_SLASHES);
     }
@@ -363,9 +483,25 @@ class JsonApi {
 
         $this->number = 0;
         foreach($list?:[] as $item) {
-            $arr["data"][] = $this->oneToArray($item, $includes);
+            $one = $this->oneToArray($item, $includes);
+            if(!empty($one["included"])) {
+                $arr["data"][] = $one["data"];
+                if(!isset($arr["included"])) $arr["included"] = [];
+                if(!$this->findInIncluded($one["included"], $arr["included"]))
+                    $arr["included"][] = $one["included"];
+            } else {
+                $arr["data"][] = $one;
+            }
         }
         return json_encode($arr, JSON_UNESCAPED_SLASHES);
+    }
+
+    protected function findInIncluded($elt, $list) {
+        foreach($list as $item) {
+            if($item["type"] === $elt[$type] && $item["id"] === $elt["id"])
+                return true;
+        }
+        return false;
     }
 
     protected function oneToArray($object, $includes=false) {
@@ -380,6 +516,18 @@ class JsonApi {
             "attributes" => [],
             "relationships" => []
         ];
+        $included = [];
+        $local_includes = [];
+        $exported_includes = [];
+        foreach($includes?:[] as $include) {
+            if(is_array($include)) {
+                $import_name = array_shift($include);
+                $local_includes[] = $import_name;
+                $exported_includes[$import_name] = $include;
+            } else {
+                $local_includes[] = $include;
+            }
+        }
         foreach($arr as $key=>$value) {
             if(in_array($key, $this->blacklist)) continue;
 
@@ -387,7 +535,7 @@ class JsonApi {
 
             switch($relType) {
             case 'has-many':
-                if( ($includes && !in_array($key, $includes))
+                if( ($includes && !in_array($key, $local_includes))
                    || (!$includes && !empty($fields[$key]["async"]))) {
                     // We've added "async" to the Cortex Model definition.
                     // If there are no "includes" and it's async, or there are "includes" and it's not in it, skip
@@ -413,38 +561,27 @@ class JsonApi {
                 ];
 
                 foreach($object->$key?:[] as $entry) {
+                    $ret["relationships"][$key]["data"][] = [
+                        "type" => $type,
+                        "id" => is_int($entry)?$entry:$entry['_id']
+                    ];
                     if($includes) {
                         $controller = "\\Controller\\".($class?end($class):$key);
-                        $ret["relationships"][$key]["data"][] = (new $controller)->oneToArray($entry);
-                    } else {
-                        $ret["relationships"][$key]["data"][] = [
-                            "type" => $type,
-                            "id" => is_int($entry)?$entry:$entry['_id']
-                        ];
+                        $including = isset($exported_includes[$key])?[implode(".", $exported_includes[$key])]:false;
+                        $include_array = (new $controller)->oneToArray($entry, $including);
+                        if($including) {
+                            $included[] = $include_array['data'];
+                            if($include_array['included']) {
+                                $included = array_merge($included, $include_array['included']);
+                            }
+                        } else {
+                            $included[] = $include_array;
+                        }
                     }
                 }
-                /*
-                // This reduces the risk of memory exhaustion on large sets
-                $i = 0; $l=10;
-                $object->countRel($key);
-                $count_key = "count_$key";
-                do {
-                    $object->filter($key,null,['limit'=>$l,'offset'=>$i*$l]);
-                    $object->load(["id=?", $object->id]);
-                    $count = $object->$count_key;
-                    echo $count."\n";
-                    foreach($object->$key?:[] as $entry) {
-                        $ret["relationships"][$key]["data"][] = [
-                            "type" => $type,
-                            "id" => $entry['_id']
-                        ];
-                    }
-                    $i++;
-                } while($i*$l <= $count && $object->$key);
-                 */
                 break;
             case 'belongs-to-one': 
-                if( ($includes && !in_array($key, $includes))
+                if( ($includes && !in_array($key, $local_includes))
                    || (!$includes && !empty($fields[$key]["async"]))) {
                     // We've added "async" to the Cortex Model definition.
                     // If there are no "includes" and it's async, or there are "includes" and it's not in it, skip
@@ -469,16 +606,24 @@ class JsonApi {
                     "data" => []
                 ];
                 if($object->$key) {
+                    $ret["relationships"][$key]["data"] = [
+                        "type" => $type,
+                        "id" => $value
+                    ];
                     if($includes) {
                         $controller = "\\Controller\\".($class?end($class):$key);
                         if($object->$key) {
-                            $ret["relationships"][$key]["data"] = (new $controller)->oneToArray($object->$key);
+                            $including = isset($exported_includes[$key])?[implode(".", $exported_includes[$key])]:false;
+                            $include_array = (new $controller)->oneToArray($object->$key, $including);
+                            if($including) {
+                                $included[] = $include_array['data'];
+                                if(!empty($include_array['included'])) {
+                                    $included = array_merge($included, $include_array['included']);
+                                }
+                            } else {
+                                $included[] = $include_array;
+                            }
                         }
-                    } else {
-                        $ret["relationships"][$key]["data"] = [
-                            "type" => $type,
-                            "id" => $value
-                        ];
                     }
                 } else {
                     $ret["relationships"][$key]["data"] = null;
@@ -490,6 +635,13 @@ class JsonApi {
                 $ret["attributes"][$key] = $value;
                 break;
             }
+        }
+
+        if(!empty($included)) {
+            $ret = [
+                "data" => $ret,
+                "included" => array_values(array_filter(array_unique($included, SORT_REGULAR), function($val) {return !is_null($val); } ))
+            ];
         }
 
         return $ret;
