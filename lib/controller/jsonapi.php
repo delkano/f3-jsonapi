@@ -486,9 +486,16 @@ class JsonApi {
             $one = $this->oneToArray($item, $includes);
             if(!empty($one["included"])) {
                 $arr["data"][] = $one["data"];
+
                 if(!isset($arr["included"])) $arr["included"] = [];
-                if(!$this->findInIncluded($one["included"], $arr["included"]))
-                    $arr["included"][] = $one["included"];
+
+                if(is_array($arr["included"])) {
+                    $merge = array_merge($arr["included"], $one["included"]);
+                    $arr["included"]  = $merge = array_values(array_filter(array_unique($merge, SORT_REGULAR), function($val) {return !is_null($val); } ));
+                } else 
+                    if(!$this->findInIncluded($one["included"], $arr["included"]))
+                        $arr["included"][] = $one["included"];
+
             } else {
                 $arr["data"][] = $one;
             }
