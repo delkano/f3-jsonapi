@@ -38,7 +38,7 @@ class JsonApi {
 
         $model = $this->getModel();
         $query = ["id=?", $id];
-        $query = $this->processSingleQuery($query); // Allows customization in children
+        $query = $this->processSingleQuery($query, $model); // Allows customization in children
         $model->load($query);
 
         if($model->dry()) {
@@ -108,6 +108,7 @@ class JsonApi {
         if(isset($f3["GET.filter"])) {
             $filters = $f3["GET.filter"];
             $fields = array_keys($model->getFieldConfiguration());
+            $fields[] = "id"; // Some people want to filter via "id"
             // We want: field equals, field from, field to, field not equals.
             $endings = [
                 "not" => "!=",
@@ -381,15 +382,26 @@ class JsonApi {
             if(in_array($rel, $valid_fields)) {
                 if(!isset($data['data'])) $f3->error(400, "Malformed payload");
                 $data = $data['data'];
-                if($conf[$rel]['relType'] != "belongs-to-one" && is_array($data) && !$this->is_assoc($data)) {
-                    $rels = [];
-                    foreach($data?:[] as $entry) {
-                        if(!empty($entry['id']))
-                            $rels[] = intval($entry['id']);
-                    }
-                    $obj->$rel = empty($rels)?null:$rels;
-                } else {
-                    $obj->$rel = $data['id']?intval($data['id']):null;
+                switch($conf[$rel]['relType']) {
+                    case "belongs-to-one":
+                        if(!is_array($data) || $this->is_assoc($data)) {
+                            $obj->$rel = $data['id']?intval($data['id']):null;
+                        } else
+                            $f3->error(400, "Malformed payload");
+                        break;
+                    case "has-many":
+                        if(is_array($data) && !$this->is_assoc($data)) {
+                            $rels = [];
+                            foreach($data?:[] as $entry) {
+                                if(!empty($entry['id']))
+                                    $rels[] = intval($entry['id']);
+                            }
+                            $obj->$rel = empty($rels)?null:$rels;
+                        } else 
+                            $f3->error(400, "Malformed payload");
+                        break;
+                    default: 
+                        break;
                 }
             }
         }
@@ -511,6 +523,14 @@ class JsonApi {
         return false;
     }
 
+    /**
+     * This method can be used for relationship control.
+     * array is passed as reference to reduce overhead
+     */
+    protected function processObjectArray($object, &$array) {
+        return;
+    }
+
     protected function oneToArray($object, $includes=false) {
         $arr = $object->cast(null,0); 
         $fields = $object->getFieldConfiguration();
@@ -535,6 +555,7 @@ class JsonApi {
                 $local_includes[] = $include;
             }
         }
+        $this->processObjectArray($object, $arr); // Hook for children
         foreach($arr as $key=>$value) {
             if(in_array($key, $this->blacklist)) continue;
 
