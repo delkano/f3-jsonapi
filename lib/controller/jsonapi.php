@@ -89,6 +89,7 @@ class JsonApi {
 	    $options["order"] = implode(",", $terms);
         } else
 		$options["order"] = $this->defaultOrder?:null;
+	$options["group"] = $this->groupBy?:null;
 
         // Here we paginate, if requested
         if(isset($f3["GET.page"])) {
@@ -98,16 +99,66 @@ class JsonApi {
         } else 
             $list = $model->find($query, $options);
 
+        //$f3->log->write($f3->DB->log());
         $r = $this->manyToJson($list, $includes);
         echo $r;
     }
 
+    protected function filterPart($f3, $query, $filters, $conf, $model, $fields, $endings, $conj = " AND ") {
+        foreach($filters as $filter=>$value) {
+            if($filter=="or") {
+                foreach($value as $group => $subfilters) {
+                    $subquery = $this->filterPart($f3, [""], $subfilters, $conf, $model, $fields, $endings, " OR ");
+                    if(!empty($query[0]))
+                        $query[0].= " AND ";
+                    $query[0].= "(".array_shift($subquery).")";
+                    $query = array_merge($query, $subquery);
+                }
+            } else { // normal, AND filters
+                $dotted = explode('.', $filter);
+                // If filter is has-many relationship:
+                if($conf[$filter]['relType']=="has-many" || count($dotted)>1) {
+                    if(count($dotted>1)) {
+                        $filter = $dotted[0];
+                        $filter_key = $dotted[1];
+                    } else {
+                        $filter_key = "_id";
+                    }
+                    $arr = explode(",", $value);
+                    if(is_array($arr)) {
+                        $model->has($filter, ["$filter_key IN ?", $arr]);
+                    } else
+                        $model->has($filter, ["$filter_key = ?", $value]);
+                } else if(in_array($filter, $fields)) { // equals
+                    $nullify = function($a) { return $a=="NULL"?NULL:$a; };
+                    $vals = array_map($nullify, explode(',', $value));
+                    $filter_query = implode(" OR ", array_fill(0, count($vals), "$filter = ?"));
+                    if(!empty($query[0]))
+                        $query[0].= $conj;
+                    $query[0].= "($filter_query)";
+                    $query = array_merge($query, $vals);
+                } else foreach($endings as $end => $sign) {
+                    $l = -1 - strlen($end);
+                    if(substr($filter, $l) == "_$end" && in_array(substr($filter, 0, $l), $fields)) {
+                        if(!empty($query[0]))
+                            $query[0].= $conj;
+                        $query[0].= "(".substr($filter, 0, $l)." $sign ?)";
+                        $query[] = is_numeric($value)?floatval($value):$value;
+                    }
+                }
+
+            }
+        }
+        return $query; 
+    }
+
     public function filterQuery($f3, $query) {
-        $model = $this->getModel();
         // Here we evaluate a few common filters, if any exist.
         if(isset($f3["GET.filter"])) {
             $filters = $f3["GET.filter"];
-            $fields = array_keys($model->getFieldConfiguration());
+            $model = $this->getModel();
+            $conf = $model->getFieldConfiguration();
+            $fields = array_keys($conf);
             $fields[] = "id"; // Some people want to filter via "id"
             // We want: field equals, field from, field to, field not equals.
             $endings = [
@@ -117,27 +168,8 @@ class JsonApi {
                 "over" => ">",
                 "under" => "<"
             ];
-            foreach($filters as $filter=>$value) {
-                if(in_array($filter, $fields)) { // equals
-                    $nullify = function($a) { return $a=="NULL"?NULL:$a; };
-                    $vals = array_map($nullify, explode(',', $value));
-                    $filter_query = implode(" OR ", array_fill(0, count($vals), "`$filter` = ?"));
-                    if(!empty($query[0]))
-                        $query[0].= " AND ";
-                    $query[0].= "($filter_query)";
-                    $query = array_merge($query, $vals);
-                } else foreach($endings as $end => $sign) {
-                    $l = -1 - strlen($end);
-                    if(substr($filter, $l) == "_$end" && in_array(substr($filter, 0, $l), $fields)) {
-                        if(!empty($query[0]))
-                            $query[0].= " AND ";
-                        $query[0].= "(`".substr($filter, 0, $l)."` $sign ?)";
-                        $query[] = $value;
-                    }
-                }
-            }
         }
-        return $query;
+        return $this->filterPart($f3, $query, $filters, $conf, $model, $fields, $endings, " AND ");
     }
 
     public function create($f3) {
@@ -196,10 +228,10 @@ class JsonApi {
         $fields = $model->getFieldConfiguration();
         $relType = $fields[$relationship]['relType'];
         if(!empty($fields[$relationship][$relType])) {
-            if($relType == 'belongs-to-one')
-                $class =explode('\\', $fields[$relationship][$relType]);
-            else
+            if(is_array($fields[$relationship][$relType]))
                 $class =explode('\\', $fields[$relationship][$relType][0]);
+            else
+                $class =explode('\\', $fields[$relationship][$relType]);
 
             $type = $this->findPlural(end($class));
         } else { $type = $relationship; }
@@ -213,7 +245,7 @@ class JsonApi {
             "data" => []
         ];
 
-        if($relType == 'belongs-to-one') {
+        if($relType == 'belongs-to-one' || $relType == 'has-one') {
             $obj = $model->get($relationship);
 
             $arr['data'] = [
@@ -345,8 +377,10 @@ class JsonApi {
         }
 
 
-        if($relType == 'belongs-to-one') {
-            $controller = "\\Controller\\".end(explode("\\", $fields[$related][$relType]));
+        if($relType == 'belongs-to-one' || $relType == 'has-one') {
+            $name = $fields[$related][$relType];
+            if(is_array($name)) $name = $name[0];
+            $controller = "\\Controller\\".end(explode("\\", $name));
             $list = $model->get($related);
             echo (new $controller)->oneToJson($list);
         } else { // has-many. If it's a different thing maybe I'll find a problem later
@@ -370,11 +404,12 @@ class JsonApi {
         $attributes = $vars["attributes"];
         // Update all standard fields
         foreach($valid_fields?:[] as $key) {
+            $ext_key = str_replace("_", "-", $key);
             if(
-                isset($attributes[$key]) // Since this includes the valid values "0" and false, ...
-                || ($attributes[$key] === null && $conf[$key]["nullable"])
+                isset($attributes[$ext_key]) // Since this includes the valid values "0" and false, ...
+                || ($attributes[$ext_key] === null && $conf[$key]["nullable"])
             ) {
-                $obj->$key = $attributes[$key];
+                $obj->$key = $attributes[$ext_key];
             }
         }
         // Update relationships
@@ -383,7 +418,7 @@ class JsonApi {
                 if(!isset($data['data'])) $f3->error(400, "Malformed payload");
                 $data = $data['data'];
                 switch($conf[$rel]['relType']) {
-                    case "belongs-to-one":
+                    case "belongs-to-one": case "has-one": 
                         if(!is_array($data) || $this->is_assoc($data)) {
                             $obj->$rel = $data['id']?intval($data['id']):null;
                         } else
@@ -501,23 +536,32 @@ class JsonApi {
 
                 if(!isset($arr["included"])) $arr["included"] = [];
 
-                if(is_array($arr["included"])) {
-                    $merge = array_merge($arr["included"], $one["included"]);
-                    $arr["included"]  = $merge = array_values(array_filter(array_unique($merge, SORT_REGULAR), function($val) {return !is_null($val); } ));
+                if(is_array($one["included"])) {
+                    $arr["included"] = array_merge($arr["included"], $one["included"]);
                 } else 
-                    if(!$this->findInIncluded($one["included"], $arr["included"]))
-                        $arr["included"][] = $one["included"];
+                    $arr["included"][] = $one["included"];
 
             } else {
                 $arr["data"][] = $one;
             }
+        }
+        if(!empty($arr["included"])) {
+            // Let's remove duplicates
+            $included = [];
+            foreach($arr["included"] as $inc) {
+                $all_found = array_merge($included, $arr["data"]);
+                if(!$this->findInIncluded($inc, $all_found)) 
+                    $included[] = $inc;
+            }
+            $arr["included"] = $included;
         }
         return json_encode($arr, JSON_UNESCAPED_SLASHES);
     }
 
     protected function findInIncluded($elt, $list) {
         foreach($list as $item) {
-            if($item["type"] === $elt[$type] && $item["id"] === $elt["id"])
+            if($item["type"] === $elt["type"]
+                && $item["id"] === $elt["id"])
                 return true;
         }
         return false;
@@ -608,7 +652,7 @@ class JsonApi {
                     }
                 }
                 break;
-            case 'belongs-to-one': 
+            case 'belongs-to-one': case 'has-one': 
                 if( ($includes && !in_array($key, $local_includes))
                    || (!$includes && !empty($fields[$key]["async"]))) {
                     // We've added "async" to the Cortex Model definition.
@@ -621,8 +665,10 @@ class JsonApi {
                     ];
                     break;   
                 }
-                if(!empty($fields[$key][$relType])) {
-                    $class =explode("\\", $fields[$key][$relType]);
+                $classname = $fields[$key][$relType];
+                if(is_array($classname)) $classname = $classname[0];
+                if(!empty($classname)) {
+                    $class =explode("\\", $classname);
                     $type = $this->findPlural(end($class));
                 } else { $type = $key; }
 
@@ -633,10 +679,11 @@ class JsonApi {
                     ],
                     "data" => []
                 ];
+                
                 if($object->$key) {
                     $ret["relationships"][$key]["data"] = [
                         "type" => $type,
-                        "id" => $value
+                        "id" => $value?:$object->$key->id
                     ];
                     if($includes) {
                         $controller = "\\Controller\\".($class?end($class):$key);

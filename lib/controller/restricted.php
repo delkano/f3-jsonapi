@@ -15,7 +15,7 @@ class Restricted extends Readable {
             $user = $f3->user;
             if(!in_array($user->get($this->role_var), $this->accepted_roles)) {
                 if(!empty($query[0])) $query[0].= " AND ";
-                $query[0].= "`$this->owner_field`=?";
+                $query[0].= "$this->owner_field=?";
                 $query[] = $user->id;
             }
             return $query;
@@ -29,7 +29,7 @@ class Restricted extends Readable {
             $user = $f3->get($this->user_var);
             if(!in_array($user->get($this->role_var), $this->accepted_roles)) {
                 if(!empty($query[0])) $query[0].= " AND ";
-                $query[0].= "`".$this->owner_field."`=?";
+                $query[0].= "".$this->owner_field."=?";
                 $query[] = $user->id;
             }
             return $query;
