@@ -25,8 +25,12 @@ class Readable extends JsonApi {
             if($obj->dry()) { //New object 
                 if(!in_array($user->get($this->role_var), $this->accepted_roles) || empty($vars["relationships"][$this->owner_field]))
                     $vars["relationships"][$this->owner_field]["data"]["id"] = $user->id; // We're not admin or trying to set the owner
-            } else if($obj->get($this->owner_field)->id != $user->id && !in_array($user->get($this->role_var), $this->accepted_roles))
+            } else if($vars[0]['type'] == "users" && $vars[0]['id'] == $user->id){
+                // We're (probably) good, just trying to add a relationship of the object to ourselves 
+            } else if($obj->get($this->owner_field)->id != $user->id && !in_array($user->get($this->role_var), $this->accepted_roles)) {
                 $f3->error(403, "You have not the permissions required to do this.");
+                
+            }
 
             return $vars;
         } else $f3->error(403, "You are not authenticated"); 

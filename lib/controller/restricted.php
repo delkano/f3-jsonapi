@@ -8,7 +8,7 @@ namespace Controller;
  */
 
 class Restricted extends Readable {
-    protected function processSingleQuery($query)
+    protected function processSingleQuery($query, $model=null)
     {
         $f3 = \Base::instance();
         if($f3->exists($this->user_var)) {
@@ -32,6 +32,7 @@ class Restricted extends Readable {
                 $query[0].= "".$this->owner_field."=?";
                 $query[] = $user->id;
             }
+            //$f3->log->write(var_export([$this->role_var, $user->get($this->role_var),$query], true));
             return $query;
         } else $f3->error(403, "You are not authenticated"); 
     }
