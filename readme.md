@@ -1,14 +1,14 @@
 # F3-JsonAPI
 
 ## Introduction
-I've had to write a few JsonAPI servers and, at some point, I've started to distil all the common code into a separate class. This is still a work in progress and will be for a while, since it is both my first library and a rewrite of those common classes I was talking about; but it should quickly be operative.
+I've had to write a few JsonAPI servers and, at some point, I've started to distil all the common code into a separate class. This is still a work in progress and will be for a while, since it is both my first library and a rewrite of those common classes I was talking about; but it should be operative.
 
 ## Use
 
 ### Dependencies
-f3-jsonapi is a [https://fatfreeframework.com/](FatFreeFramework) plugin. These instructions assume you are working in a FatFreeFramework project.
+f3-jsonapi is a [FatFreeFramework](https://fatfreeframework.com/) plugin. These instructions assume you are working in a FatFreeFramework project.
 
-In addition, you need to have [https://github.com/ikkez/f3-cortex](F3-Cortex) installed and configured.
+In addition, you need to have [F3-Cortex](https://github.com/ikkez/f3-cortex) installed and configured.
 
 ### Installation
 You can install f3-jsonapi in your project with:
